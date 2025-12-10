@@ -31,6 +31,7 @@ import (
     "net"
     "net/http"
     "path"
+    "sort"
     "strings"
     "time"
 
@@ -180,6 +181,27 @@ func (srv *RttyServer) ListenAPI() error {
 
             devs = append(devs, info)
         }
+
+        // Sort devices:
+        // 1. Online devices first (Connected > 0)
+        // 2. Within the same online/offline group, sort by device ID alphabetically
+        sort.Slice(devs, func(i, j int) bool {
+            di := devs[i]
+            dj := devs[j]
+
+            // Determine online status
+            diOnline := di.Connected > 0
+            djOnline := dj.Connected > 0
+
+            if diOnline != djOnline {
+                return diOnline
+            }
+
+            // If both devices are in the same state (online or offline),
+            // sort by device ID in ascending alphabetical order
+            return di.ID < dj.ID
+        })
+
         c.JSON(http.StatusOK, devs)
     })
 

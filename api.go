@@ -498,13 +498,20 @@ func (srv *RttyServer) ListenAPI() error {
             hostname = host // Use host directly if no port
         }
 
-        // Choose value by priority:
-        // 1) If request host is a domain (not an IP), keep it.
-        // 2) Else if it's an IP and cfg.WebrtcIP is set, use cfg.WebrtcIP.
-        // 3) Else keep the request IP.
         chosen := hostname
-        if isIP(hostname) && cfg.WebrtcIP != "" {
-            chosen = cfg.WebrtcIP
+        // --------  Reverse proxy mode: force IP ----------
+        if cfg.ReverseProxyEnabled {
+            // Reverse proxy mode: always use configured WebRTC IP
+            if strings.TrimSpace(cfg.WebrtcIP) != "" {
+                chosen = strings.TrimSpace(cfg.WebrtcIP)
+            }
+        } else {
+            // -------- 3) Original behavior (unchanged) ----------
+            // 1) If hostname is domain, keep it
+            // 2) If hostname is IP and cfg.WebrtcIP is set, use cfg.WebrtcIP
+            if isIP(hostname) && cfg.WebrtcIP != "" {
+                chosen = cfg.WebrtcIP
+            }
         }
 
         c.JSON(http.StatusOK, gin.H{
@@ -524,7 +531,10 @@ func (srv *RttyServer) ListenAPI() error {
     }
     defer ln.Close()
 
-    if cfg.SslCert != "" && cfg.SslKey != "" {
+    // If we're behind a reverse proxy (TLS terminated by nginx), never enable TLS here.
+    enableTLS := !cfg.ReverseProxyEnabled && cfg.SslCert != "" && cfg.SslKey != ""
+
+    if enableTLS {
         crt, err := tls.LoadX509KeyPair(cfg.SslCert, cfg.SslKey)
         if err != nil {
             log.Fatal().Msg(err.Error())

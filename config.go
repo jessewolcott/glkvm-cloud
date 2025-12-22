@@ -78,6 +78,12 @@ type Config struct {
     OIDCGenericAllowedSubs      []string
     OIDCGenericAllowedUsernames []string
     OIDCGenericAllowedGroups    []string
+
+    // =====================================================
+    // Reverse Proxy / Proxy Mode
+    // =====================================================
+    // Enable proxy mode (app is behind Nginx/Traefik/Caddy/Cloudflare)
+    ReverseProxyEnabled bool
 }
 
 // docker mode fixed path for reading certificate
@@ -249,6 +255,17 @@ func parseYamlCfg(cfg *Config, conf string) error {
     // 4) Groups whitelist
     if s, err := yamlCfg.Get("oidc-generic-allowed-groups"); err == nil && strings.TrimSpace(s) != "" {
         cfg.OIDCGenericAllowedGroups = splitScopes(s)
+    }
+
+    // Reverse proxy mode is always read from environment variable
+    // to avoid config drift when running behind different proxies per deployment.
+    if v := strings.TrimSpace(os.Getenv("REVERSE_PROXY_ENABLED")); v != "" {
+        // Accept common truthy values: "true/false", "1/0", "yes/no", "on/off"
+        if b, err := strconv.ParseBool(v); err == nil {
+            cfg.ReverseProxyEnabled = b
+        } else {
+            return fmt.Errorf("invalid REVERSE_PROXY_ENABLED value %q, expected boolean (true/false/1/0)", v)
+        }
     }
 
     return nil

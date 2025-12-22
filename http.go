@@ -88,7 +88,9 @@ func (srv *RttyServer) ListenHttpProxy() {
     }
     defer ln.Close()
 
-    if cfg.SslCert != "" && cfg.SslKey != "" {
+    // In reverse proxy mode (TLS terminated by nginx), never enable TLS here.
+    enableTLS := !cfg.ReverseProxyEnabled && cfg.SslCert != "" && cfg.SslKey != ""
+    if enableTLS {
         crt, err := tls.LoadX509KeyPair(cfg.SslCert, cfg.SslKey)
         if err != nil {
             log.Fatal().Msg(err.Error())
@@ -344,8 +346,77 @@ func httpProxyRedirect(srv *RttyServer, c *gin.Context, group string) {
         log.Info().Msgf("Using IP redirect: %s", location)
     } else {
         redirHost := buildRedirectHost(hostname, devid)
-        location = fmt.Sprintf("https://%s%s?sid=%s", redirHost, cfg.AddrHttpProxy, sid)
-        log.Info().Msgf("Using domain redirect: %s", location)
+        // Keep original behavior when NOT in reverse proxy mode
+        if !cfg.ReverseProxyEnabled {
+            location = fmt.Sprintf("https://%s%s?sid=%s", redirHost, cfg.AddrHttpProxy, sid)
+            log.Info().Msgf("Using domain redirect: %s", location)
+        } else {
+            // 0) scheme: follow reverse proxy
+            scheme := ""
+            if v := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); v != "" {
+                scheme = strings.ToLower(strings.Split(v, ",")[0])
+            } else if c.Request.TLS != nil {
+                scheme = "https"
+            } else {
+                scheme = "http"
+            }
+
+            // 1) external port: prefer the one user actually accessed (Host or forwarded headers)
+            port := ""
+
+            // Prefer port from Host
+            if _, p, err := net.SplitHostPort(c.Request.Host); err == nil && p != "" {
+                port = p
+            }
+
+            // Fallback to forwarded headers
+            if port == "" {
+                if fp := strings.TrimSpace(c.GetHeader("X-Forwarded-Port")); fp != "" {
+                    port = strings.TrimSpace(strings.Split(fp, ",")[0])
+                } else if fh := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); fh != "" {
+                    fh = strings.TrimSpace(strings.Split(fh, ",")[0])
+                    if _, p, err := net.SplitHostPort(fh); err == nil && p != "" {
+                        port = p
+                    }
+                }
+            }
+
+            // 2) If still empty, fallback to cfg.AddrHttpProxy (which is a PORT, not a path)
+            if port == "" && strings.TrimSpace(cfg.AddrHttpProxy) != "" {
+                portTmp := strings.TrimSpace(cfg.AddrHttpProxy)
+                // Common cases: ":10443", "0.0.0.0:10443", "[::]:10443"
+                if _, p, err := net.SplitHostPort(portTmp); err == nil {
+                    port = p
+                }
+            }
+
+            // 3) Build host: in proxy mode redirect domain to be redirHost
+            hostPort := redirHost
+            if port != "" {
+                // avoid adding default ports
+                if (scheme == "https" && port != "443") || (scheme == "http" && port != "80") {
+                    hostPort = net.JoinHostPort(redirHost, port)
+                }
+            }
+
+            // 4) Path: use the current request path
+            redirectPath := c.Request.URL.Path
+            if redirectPath == "" {
+                redirectPath = "/"
+            }
+
+            u := &url.URL{
+                Scheme: scheme,
+                Host:   hostPort,
+                Path:   redirectPath,
+            }
+            q := u.Query()
+            q.Set("sid", sid)
+            u.RawQuery = q.Encode()
+
+            location = u.String()
+            log.Info().Msgf("Using domain redirect (proxy mode): %s", location)
+        }
     }
 
     log.Info().Msgf("Final redirect location: %s", location)

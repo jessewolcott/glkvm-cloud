@@ -49,6 +49,9 @@ services:
       OIDC_ALLOWED_SUBS: ${OIDC_ALLOWED_SUBS:-}
       OIDC_ALLOWED_USERNAMES: ${OIDC_ALLOWED_USERNAMES:-}
       OIDC_ALLOWED_GROUPS: ${OIDC_ALLOWED_GROUPS:-}
+
+      # ---- Reverse Proxy ----
+      REVERSE_PROXY_ENABLED: ${REVERSE_PROXY_ENABLED:-false}
     volumes:
       - ./templates/rttys.conf.template:/tpl/rttys.conf.tmpl:ro
       - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro

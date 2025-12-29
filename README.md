@@ -67,6 +67,7 @@ We provide **two** ways to install GLKVM Cloud:
 #### A) One-line installer (recommended, x86_64/amd64)
 
 > **Note:** The one-line installer is **Docker-based**. It automates Docker/Compose setup, pulls images, renders configs from templates, and starts services for you.
+>
 > **Platform:** currently supports **x86_64 (amd64)** only.
 
 Run **as root**:

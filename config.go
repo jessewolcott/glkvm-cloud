@@ -84,6 +84,13 @@ type Config struct {
     // =====================================================
     // Enable proxy mode (app is behind Nginx/Traefik/Caddy/Cloudflare)
     ReverseProxyEnabled bool
+
+    // =====================================================
+    // Device Remote Access
+    // =====================================================
+    // Host[:port] used to generate device remote access address:
+    //   <deviceId>.<DEVICE_ENDPOINT_HOST>
+    DeviceEndpointHost string
 }
 
 // docker mode fixed path for reading certificate
@@ -266,6 +273,24 @@ func parseYamlCfg(cfg *Config, conf string) error {
         } else {
             return fmt.Errorf("invalid REVERSE_PROXY_ENABLED value %q, expected boolean (true/false/1/0)", v)
         }
+    }
+
+    if v := strings.TrimSpace(os.Getenv("DEVICE_ENDPOINT_HOST")); v != "" {
+        cleaned := v
+        // 1. Remove scheme if present (http:// or https://)
+        if idx := strings.Index(cleaned, "://"); idx != -1 {
+            cleaned = cleaned[idx+3:]
+        }
+
+        // 2. Remove path/query/fragment if present
+        //    Keep only host[:port]
+        if idx := strings.IndexAny(cleaned, "/?#"); idx != -1 {
+            cleaned = cleaned[:idx]
+        }
+
+        // 3. Final trim
+        cleaned = strings.TrimSpace(cleaned)
+        cfg.DeviceEndpointHost = cleaned
     }
 
     return nil

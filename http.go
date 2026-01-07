@@ -372,6 +372,12 @@ func httpProxyRedirect(srv *RttyServer, c *gin.Context, group string) {
                 rawHost, xfHost, xfProto, xfPort, xRealIP, xFF,
             )
 
+            // -------------------------------------------------
+            // Proxy mode:
+            // 1) If DEVICE_ENDPOINT_HOST is configured, use it directly
+            // 2) Otherwise, fallback to forwarded-header logic
+            // -------------------------------------------------
+
             // 0) scheme: follow reverse proxy
             scheme := ""
             if v := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")); v != "" {
@@ -382,44 +388,50 @@ func httpProxyRedirect(srv *RttyServer, c *gin.Context, group string) {
                 scheme = "http"
             }
 
-            // 1) external port: prefer the one user actually accessed
-            port := ""
-            if fp := strings.TrimSpace(c.GetHeader("X-Forwarded-Port")); fp != "" {
-                port = strings.TrimSpace(strings.Split(fp, ",")[0])
-            } else if fh := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); fh != "" {
-                fh = strings.TrimSpace(strings.Split(fh, ",")[0])
-                if _, p, err := net.SplitHostPort(fh); err == nil && p != "" {
+            // [A] Prefer explicit DEVICE_ENDPOINT_HOST if set
+            if v := strings.TrimSpace(cfg.DeviceEndpointHost); v != "" {
+                endpoint := v // already normalized when reading env: host[:port] only
+
+                baseHost := endpoint
+                port := ""
+                if h, p, err := net.SplitHostPort(endpoint); err == nil {
+                    baseHost = h
                     port = p
                 }
-            }
-            log.Info().Msgf("port: %s", port)
 
-            // 3) Build host: in proxy mode redirect domain to be redirHost
-            hostPort := redirHost
-            if port != "" {
-                // avoid adding default ports
-                if (scheme == "https" && port != "443") || (scheme == "http" && port != "80") {
-                    hostPort = net.JoinHostPort(redirHost, port)
+                // Build device host: <deviceId>.<baseHost>
+                // NOTE: DEVICE_ENDPOINT_HOST is a base domain (host[:port]) for device access,
+                baseHost = strings.TrimSuffix(strings.TrimSpace(baseHost), ".")
+                deviceHost := devid
+                if baseHost != "" {
+                    deviceHost = devid + "." + baseHost
                 }
-            }
 
-            // 4) Path: use the current request path
-            redirectPath := c.Request.URL.Path
-            if redirectPath == "" {
-                redirectPath = "/"
-            }
+                hostPort := joinHostPortIfNeeded(deviceHost, scheme, port)
 
-            u := &url.URL{
-                Scheme: scheme,
-                Host:   hostPort,
-                Path:   redirectPath,
-            }
-            q := u.Query()
-            q.Set("sid", sid)
-            u.RawQuery = q.Encode()
+                redirectPath := c.Request.URL.Path
+                location = buildRedirectLocation(scheme, hostPort, redirectPath, sid)
+                log.Info().Msgf("Using domain redirect (proxy mode, DEVICE_ENDPOINT_HOST): %s", location)
+            } else {
+                // 1) external port: prefer the one user actually accessed
+                port := ""
+                if fp := strings.TrimSpace(c.GetHeader("X-Forwarded-Port")); fp != "" {
+                    port = strings.TrimSpace(strings.Split(fp, ",")[0])
+                } else if fh := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); fh != "" {
+                    fh = strings.TrimSpace(strings.Split(fh, ",")[0])
+                    if _, p, err := net.SplitHostPort(fh); err == nil && p != "" {
+                        port = p
+                    }
+                }
+                log.Info().Msgf("port: %s", port)
 
-            location = u.String()
-            log.Info().Msgf("Using domain redirect (proxy mode): %s", location)
+                // 3) Build host: in proxy mode redirect domain to be redirHost
+                hostPort := joinHostPortIfNeeded(redirHost, scheme, port)
+
+                redirectPath := c.Request.URL.Path
+                location = buildRedirectLocation(scheme, hostPort, redirectPath, sid)
+                log.Info().Msgf("Using domain redirect (proxy mode): %s", location)
+            }
         }
     }
 
@@ -727,4 +739,30 @@ func buildRedirectHost(hostname, devid string) string {
         suffix := strings.Join(labels[1:], ".")
         return devid + "." + suffix
     }
+}
+
+func joinHostPortIfNeeded(host, scheme, port string) string {
+    if port == "" {
+        return host
+    }
+    // avoid adding default ports
+    if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+        return host
+    }
+    return net.JoinHostPort(host, port)
+}
+
+func buildRedirectLocation(scheme, hostPort, path, sid string) string {
+    if path == "" {
+        path = "/"
+    }
+    u := &url.URL{
+        Scheme: scheme,
+        Host:   hostPort,
+        Path:   path,
+    }
+    q := u.Query()
+    q.Set("sid", sid)
+    u.RawQuery = q.Encode()
+    return u.String()
 }

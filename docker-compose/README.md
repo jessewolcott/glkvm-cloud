@@ -62,43 +62,66 @@
    - `OIDC_ALLOWED_USERNAMES`: comma-separated list of allowed usernames (`preferred_username` or `name`) (optional)
    - `OIDC_ALLOWED_GROUPS`: comma-separated list of allowed OIDC groups (optional)
    
-   **Reverse Proxy Mode (Optional)**
-   
-   ```env
-   # Enable reverse proxy mode (e.g. Nginx in front of GLKVM Cloud).
-   # When enabled, TLS is terminated by the reverse proxy and GLKVM Cloud runs in plain HTTP.
-   REVERSE_PROXY_ENABLED=false
-   ```
-   
-   When `REVERSE_PROXY_ENABLED` is set to `true`, GLKVM Cloud is designed to run **behind a reverse proxy** such as Nginx:
-   
-   - HTTPS certificates are managed by the reverse proxy (not by GLKVM Cloud itself)
-   - GLKVM Cloud listens on plain HTTP internally
-   - The same HTTPS port can be used for both:
-     - Accessing the GLKVM Cloud web UI
-     - Accessing remote KVM devices
-   
-   For example, with proper Nginx configuration,
-   
-   ```nginx
-   # Forward original host, scheme, port and client IP
-   # These headers are required when running GLKVM Cloud behind a reverse proxy.
-   proxy_set_header Host                $host;
-   proxy_set_header X-Forwarded-Host    $host;
-   proxy_set_header X-Forwarded-Proto   $scheme;
-   proxy_set_header X-Forwarded-Port    $server_port;
-   proxy_set_header X-Real-IP           $remote_addr;
-   proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
-   ```
-   
-    you can use:
-   
-   ```text
-   https://www.example.com            → GLKVM Cloud web interface
-   https://<device_id>.example.com    → Remote device access
-   ```
-   
-   Both addresses can share the **same HTTPS port (443)**, while routing is handled by the reverse proxy based on the domain name.
+
+#### Reverse Proxy Mode (Optional)
+
+```env
+REVERSE_PROXY_ENABLED=false
+```
+
+When enabled (`REVERSE_PROXY_ENABLED=true`):
+
+- GLKVM Cloud runs behind a reverse proxy (e.g. Nginx)
+- TLS is terminated at the reverse proxy; GLKVM Cloud uses plain HTTP internally
+- The Web UI and remote device access can share the same HTTPS port (usually 443)
+
+
+##### Required Reverse Proxy Headers
+
+The reverse proxy **must** forward the following headers; otherwise, GLKVM Cloud may generate URLs containing internal ports (e.g. `:10443`):
+
+```nginx
+proxy_set_header Host                $host;
+proxy_set_header X-Forwarded-Host    $host;
+proxy_set_header X-Forwarded-Proto   $scheme;
+proxy_set_header X-Forwarded-Port    $server_port;
+proxy_set_header X-Real-IP           $remote_addr;
+proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
+```
+
+
+##### Device Remote Access Domain (Optional)
+
+```env
+DEVICE_ENDPOINT_HOST=
+```
+
+- **Effective only when** `REVERSE_PROXY_ENABLED=true`
+- Used to specify the domain for device remote access
+- Device access URLs are generated as:
+
+```text
+https://<deviceId>.<DEVICE_ENDPOINT_HOST>/
+```
+
+**Notes:**
+
+- Do not include the scheme (`http://` or `https://`)
+- Do not include any path
+- The domain may differ from the Web UI domain
+- If left empty, the host/port will be derived from `X-Forwarded-*` headers
+
+**Example:**
+
+```text
+https://www.example.com             → Web UI
+https://<deviceId>.kvm.example.com  → Device remote access
+DEVICE_ENDPOINT_HOST=kvm.example.com
+```
+
+
+
+
 
 ⚠️ **Note:** All configuration should be done in the `.env` file.
     You don’t need to modify `docker-compose.yml`, templates, or scripts directly.

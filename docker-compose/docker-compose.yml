@@ -53,6 +53,9 @@ services:
 
       # ---- Reverse Proxy ----
       REVERSE_PROXY_ENABLED: ${REVERSE_PROXY_ENABLED:-false}
+
+      # ---- Device Endpoint Host ----
+      DEVICE_ENDPOINT_HOST: ${DEVICE_ENDPOINT_HOST:-}
     volumes:
       - ./templates/rttys.conf.template:/tpl/rttys.conf.tmpl:ro
       - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro

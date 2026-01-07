@@ -63,27 +63,24 @@ cd glkvm-cloud/docker-compose/
 - `OIDC_ALLOWED_USERNAMES`：允许的用户名列表（可选）
 - `OIDC_ALLOWED_GROUPS`：允许的用户组列表（可选）
 
-#### **反向代理模式（可选）**
+#### 反向代理模式（可选）
 
 ```env
-# 启用反向代理模式（例如在 GLKVM Cloud 前使用 Nginx）
-# 启用后，TLS 由反向代理终止，GLKVM Cloud 内部使用明文 HTTP
 REVERSE_PROXY_ENABLED=false
 ```
 
-当 `REVERSE_PROXY_ENABLED` 设置为 `true` 时，GLKVM Cloud 将运行在 **反向代理（如 Nginx）之后**：
+启用后（`REVERSE_PROXY_ENABLED=true`）：
 
-- HTTPS 证书由反向代理管理（而不是由 GLKVM Cloud 本身管理）
-- GLKVM Cloud 内部以明文 HTTP 方式监听
-- 同一个 HTTPS 端口可同时用于：
-  - 访问 GLKVM Cloud Web 管理界面
-  - 访问远程 KVM 设备
+- GLKVM Cloud 运行在反向代理（如 Nginx）之后
+- TLS 由反向代理终止，GLKVM Cloud 内部使用 HTTP
+- Web UI 与设备远程访问可共用同一个 HTTPS 端口（通常为 443）
 
-例如，在正确配置 Nginx 的情况下：
+
+##### 必需的反向代理请求头
+
+反向代理必须转发以下请求头，否则可能生成包含内部端口（如 `:10443`）的访问地址：
 
 ```nginx
-# 转发原始的主机名、协议、端口以及客户端 IP
-# 在反向代理模式下，这些 Header 是必须的
 proxy_set_header Host                $host;
 proxy_set_header X-Forwarded-Host    $host;
 proxy_set_header X-Forwarded-Proto   $scheme;
@@ -92,14 +89,34 @@ proxy_set_header X-Real-IP           $remote_addr;
 proxy_set_header X-Forwarded-For     $proxy_add_x_forwarded_for;
 ```
 
-你可以通过以下地址访问：
+##### 设备远程访问域名（可选）
 
-```text
-https://www.example.com            → GLKVM Cloud 管理界面
-https://<device_id>.example.com    → 远程设备访问
+```env
+DEVICE_ENDPOINT_HOST=
 ```
 
-这两个地址可以共用 **同一个 HTTPS 端口（443）**，由反向代理根据访问的域名进行路由区分。
+- **仅在** `REVERSE_PROXY_ENABLED=true` 时生效
+- 用于指定设备远程访问使用的域名
+- 生成的设备访问地址格式为：
+
+```text
+https://<deviceId>.<DEVICE_ENDPOINT_HOST>/
+```
+
+**说明：**
+
+- 不需要包含 `http(s)://` 或路径
+- 可与 Web UI 域名不同
+- 留空时，将从 `X-Forwarded-*` 请求头自动推导
+
+**示例：**
+
+```text
+https://www.example.com             → Web UI
+https://<deviceId>.kvm.example.com  → 设备远程访问
+DEVICE_ENDPOINT_HOST=kvm.example.com
+```
+
 
 ⚠️ **注意：所有配置均需在 `.env` 中完成，不需要修改 `docker-compose.yml`、模板或脚本。**
 

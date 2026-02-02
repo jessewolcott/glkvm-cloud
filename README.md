@@ -2,7 +2,7 @@
 
 [中文文档](./README.zh-CN.md) | English
 
-Self-Deployed Lightweight Cloud is a lightweight KVM remote cloud platform tailored for individuals and small businesses. This project is developed based on [rttys](https://github.com/zhaojh329/rttys), designed for users who need to **quickly** build a remote access platform while prioritizing **data security**. 
+Self-Deployed Lightweight Cloud is a lightweight KVM remote cloud platform tailored for individuals and small businesses. This project is developed based on [rttys](https://github.com/zhaojh329/rttys), designed for users who need to **quickly** build a remote access platform while prioritizing **data security**.
 
 #### Main Functions and Features
 
@@ -13,9 +13,9 @@ Self-Deployed Lightweight Cloud is a lightweight KVM remote cloud platform tailo
 -  **Batch Operations** - Batch command execution capabilities
 -  **Rapid Deployment** - Quick self-deployment with simple operations
 -  **Data Security** - Private deployment with full data control
--  **Dedicated Bandwidth** - Exclusive bandwidth for self-hosted deployments 
+-  **Dedicated Bandwidth** - Exclusive bandwidth for self-hosted deployments
 -  **Lightweight Design** - Optimized for small businesses and individual users
--  **Enterprise Authentication** -  Supports both **LDAP** and **OIDC** login methods for enterprise users. 
+-  **Enterprise Authentication** -  Supports both **LDAP** and **OIDC** login methods for enterprise users.
 
 -  **Deployment** - Supports both **internal network** and **public internet** deployments
 -  **Platform Compatibility** - Supports both **x86_64** and **arm64** platforms
@@ -45,9 +45,89 @@ The following mainstream operating systems have been tested and verified
 | Network Bandwidth   | ≥ 3 Mbps      |
 | KVM Device Firmware |      ≥ v1.5.0       |
 
-#### 🔐 Cloud Security Group Settings
+------
 
-If your server provider uses a **cloud security group** (e.g., AWS, Aliyun, etc.), please make sure the following ports are **open**:
+## Installation Options
+
+We provide **three** installation methods:
+
+| Method | Best For | TLS Certificates | Features |
+|--------|----------|------------------|----------|
+| **A) Interactive Installer** | Production deployments | Auto Let's Encrypt or self-signed | Full configuration wizard, Traefik + CrowdSec option |
+| **B) One-line Installer** | Quick testing | Self-signed | Fastest setup, downloads from gl-inet |
+| **C) Manual Docker Compose** | Custom deployments | Your choice | Full control |
+
+---
+
+### A) Interactive Installer (Recommended)
+
+The interactive installer provides a guided setup with two deployment modes:
+
+#### Standard Mode
+- Self-signed TLS certificate
+- Access via IP address
+- Quick setup for testing or internal networks
+
+#### Traefik Mode (Production)
+- **Automatic Let's Encrypt certificates** (including wildcard)
+- **CrowdSec brute-force protection**
+- Domain-based access with proper TLS
+- Supports DigitalOcean, Cloudflare, AWS Route53, Google Cloud DNS
+
+**Run as root:**
+
+```bash
+git clone https://github.com/jessewolcott/glkvm-cloud.git
+cd glkvm-cloud
+sudo ./installer-interactive.sh
+```
+
+The installer will prompt you to choose between Standard and Traefik modes, then guide you through the configuration.
+
+---
+
+### B) One-line Installer (Quick Start)
+
+> **Note:** Downloads pre-built images from gl-inet servers. Supports **x86_64 (amd64)** only.
+
+**Run as root:**
+
+```bash
+curl -fsSL https://kvm-cloud.gl-inet.com/selfhost/install.sh | sudo bash
+```
+
+---
+
+### C) Manual Docker Compose
+
+> Full reference: see [`Source/docker-compose/README.md`](Source/docker-compose/README.md)
+>
+> **Platform:** supports both **x86_64 (amd64)** and **arm64 (AArch64)**.
+
+```bash
+git clone https://github.com/jessewolcott/glkvm-cloud.git
+cd glkvm-cloud/Source/docker-compose
+
+# For x86_64:
+cp .env.example .env
+
+# For arm64:
+cp .env.arm64.example .env
+
+# Edit configuration
+nano .env
+
+# Start services
+docker-compose up -d
+```
+
+---
+
+## 🔐 Cloud Security Group Settings
+
+If your server provider uses a **cloud security group** (e.g., AWS, Aliyun, etc.), please ensure the following ports are **open**:
+
+#### Standard Installation
 
 | Port  | Protocol | Purpose                        |
 | ----- | -------- | ------------------------------ |
@@ -56,44 +136,42 @@ If your server provider uses a **cloud security group** (e.g., AWS, Aliyun, etc.
 | 5912  | TCP      | Device connection              |
 | 3478  | TCP/UDP  | TURN server for WebRTC support |
 
-⚠️ **Important:**
- These ports will be **used by GLKVM Cloud**. Please ensure **no other applications or services** on your server are binding to these ports, otherwise the lightweight cloud platform may fail to start properly.
+#### Traefik Installation
 
-------
-### 📦 Installation
+| Port  | Protocol | Purpose                        |
+| ----- | -------- | ------------------------------ |
+| 80    | TCP      | HTTP (redirects to HTTPS)      |
+| 443   | TCP      | HTTPS (Web UI & Device Access) |
+| 5912  | TCP      | Device connection              |
+| 3478  | TCP/UDP  | TURN server for WebRTC support |
 
-We provide **two** ways to install GLKVM Cloud: 
+> **Important:** These ports will be **used by GLKVM Cloud**. Please ensure **no other applications or services** on your server are binding to these ports.
 
-#### A) One-line installer (recommended, x86_64/amd64)
+---
 
-> **Note:** The one-line installer is **Docker-based**. It automates Docker/Compose setup, pulls images, renders configs from templates, and starts services for you.
->
-> **Platform:** currently supports **x86_64 (amd64)** only.
+## 🌐 Platform Access
 
-Run **as root**:
-
-```bash
-( command -v curl >/dev/null 2>&1 && curl -fsSL https://kvm-cloud.gl-inet.com/selfhost/install.sh || wget -qO- https://kvm-cloud.gl-inet.com/selfhost/install.sh ) | sudo bash
-```
-
-#### B) Docker manual install
-
-> Full reference: see [`docker-compose/README.md`](https://github.com/gl-inet/glkvm-cloud/blob/main/docker-compose/README.md)
->
-> **Platform:** supports both **x86_64 (amd64)** and **arm64 (AArch64)**. 
-
-### 🌐 Platform Access
-
-Once the installation is complete, access the platform via:
+### Standard Installation (IP-based)
 
 ```
 https://<your_server_public_ip>
 ```
 
-⚠️ **Note**: Accessing via IP address will trigger a **browser certificate warning**.
- To eliminate the warning, it's recommended to configure a **custom domain** with a valid SSL certificate.
+> **Note**: Accessing via IP address will trigger a **browser certificate warning**.
 
-### 🔑 Web UI Login Password
+### Traefik Installation (Domain-based)
+
+```
+https://www.your-domain.com      # Web UI
+https://your-domain.com          # Web UI (alternate)
+https://<device-id>.your-domain.com  # Device access
+```
+
+Certificates are automatically provisioned by Let's Encrypt - no browser warnings!
+
+---
+
+## 🔑 Web UI Login Password
 
 The default login password for the Web UI will be displayed in the installation script output:
 
@@ -103,9 +181,11 @@ The default login password for the Web UI will be displayed in the installation 
 
 ![](img/password.png)
 
+---
+
 ## Feature Demonstrations
 
-###  Add KVM Devices to the Lightweight Cloud 
+###  Add KVM Devices to the Lightweight Cloud
 
 - Copy script
 
@@ -128,34 +208,15 @@ The default login password for the Web UI will be displayed in the installation 
 
 ![Remote Control Screenshot](img/web.png)
 
+---
 
+## Advanced Configuration
 
-##  Use your own SSL Certificate (Optional) 
+### Use your own SSL Certificate (Standard Mode Only)
 
-⚠️ **Note**:
+> **Note**: If using Traefik mode, certificates are managed automatically by Let's Encrypt.
 
-If you just want to **quickly try out GLKVM Cloud** and don’t mind the browser’s certificate warning,
-you can **skip** configuring a custom domain and SSL certificate, and still access the platform via the server’s **public IP** with HTTPS.
-
-For production use, or if you need to **access multiple KVM devices via subdomains**, it is **strongly recommended** to configure your own **wildcard SSL certificate** (see below).
-
-#### 🌐 Add DNS Records
-
-To enable full domain-based access, configure the following DNS records for your domain:
-
-```
-┌────────────┬──────┬────────────────────┬─────────────────────────────┐
-│ Hostname   │ Type │     Value           │         Purpose             │
-├────────────┼──────┼────────────────────┼─────────────────────────────┤
-│ www        │  A   │ Your public IP      │ Web access to the platform │
-│ *          │  A   │ Your public IP      │ Remote access to KVMs      │
-└────────────┴──────┴────────────────────┴─────────────────────────────┘
-```
-
-#### 🔧 Using a Custom SSL Certificate
-
-To avoid browser warnings, replace the default certificates with your own **wildcard SSL certificate**
- that supports both:
+For standard installations, replace the default certificates with your own **wildcard SSL certificate** that supports:
 
 - `*.your-domain.com` (for device access)
 - `www.your-domain.com` (for platform access)
@@ -169,9 +230,33 @@ Replace the following files in:
 - `glkvm.cer`
 - `glkvm.key`
 
-⚠️ **Make sure the filenames remain unchanged.**
+> **Make sure the filenames remain unchanged.**
 
-#### 🔐 LDAP Authentication Configuration (Optional)
+---
+
+### 🌐 DNS Configuration
+
+#### For Traefik Installation
+
+Add these A records pointing to your server IP:
+
+| Hostname | Type | Value | Purpose |
+|----------|------|-------|---------|
+| `@` (or domain) | A | Your public IP | Web UI access |
+| `www` | A | Your public IP | Web UI access |
+| `*` | A | Your public IP | Device access (wildcard) |
+| `traefik` | A | Your public IP | Traefik dashboard (optional) |
+
+#### For Standard Installation with Custom Domain
+
+| Hostname | Type | Value | Purpose |
+|----------|------|-------|---------|
+| `www` | A | Your public IP | Web access to the platform |
+| `*` | A | Your public IP | Remote access to KVMs |
+
+---
+
+### 🔐 LDAP Authentication (Optional)
 
 GLKVM Cloud supports LDAP authentication for enterprise environments, allowing you to integrate with existing directory services like Active Directory, OpenLDAP, or FreeIPA.
 
@@ -183,13 +268,15 @@ GLKVM Cloud supports LDAP authentication for enterprise environments, allowing y
 - **Multiple LDAP Systems**: Compatible with Active Directory, OpenLDAP, FreeIPA, and generic LDAP servers
 
 **Configuration:**
-For detailed LDAP configuration options and setup instructions, see the [Docker Compose README](docker-compose/README.md).
+For detailed LDAP configuration options and setup instructions, see the [Docker Compose README](Source/docker-compose/README.md).
 
 **Note**: When LDAP is enabled, users can choose between:
 - **LDAP Authentication**: Enter username and password for directory service authentication
 - **Legacy Authentication**: Leave username empty and use the web management password
 
-#### 🔐 OIDC Authentication Configuration (Optional)
+---
+
+### 🔐 OIDC Authentication (Optional)
 
 GLKVM Cloud provides full support for **OIDC (OpenID Connect)** authentication, allowing seamless integration with modern identity providers such as **Google, Auth0, Authing** and any other standard-compliant OIDC provider.
 
@@ -210,28 +297,99 @@ GLKVM Cloud provides full support for **OIDC (OpenID Connect)** authentication, 
 
  **Configuration**
 
-For detailed OIDC configuration options and setup instructions, see the
- **[Docker Compose README](docker-compose/README.md)**.
+For detailed OIDC configuration options and setup instructions, see the **[Docker Compose README](Source/docker-compose/README.md)**.
 
-#### 🔄 Restart Services After Configuration Changes
+---
 
-After replacing certificates or updating LDAP configuration, restart the GLKVM Cloud services to apply the changes:
+### 🔄 Restart Services After Configuration Changes
 
+After replacing certificates or updating configuration, restart the GLKVM Cloud services:
+
+**Standard Installation:**
 ```bash
 cd ~/glkvm_cloud
 docker-compose down && docker-compose up -d
 ```
 
+**Traefik Installation:**
+```bash
+cd ~/glkvm_cloud
+docker-compose -f docker-compose.traefik.yml down
+docker-compose -f docker-compose.traefik.yml up -d
+```
+
 Or, on systems with the Docker CLI plugin:
+```bash
+docker compose -f docker-compose.traefik.yml down
+docker compose -f docker-compose.traefik.yml up -d
+```
+
+---
+
+## Project Structure
+
+```
+glkvm-cloud/
+├── installer-interactive.sh    # Interactive installer (recommended)
+├── install.sh                  # One-line installer (downloads from gl-inet)
+├── README.md                   # This file
+└── Source/
+    └── docker-compose/
+        ├── docker-compose.yml          # Standard deployment
+        ├── docker-compose.traefik.yml  # Traefik + Let's Encrypt deployment
+        ├── .env.example                # Environment template (x86_64)
+        ├── .env.arm64.example          # Environment template (arm64)
+        ├── .env.traefik.example        # Traefik environment template
+        ├── traefik/                    # Traefik configuration
+        │   ├── traefik.yml             # Static config
+        │   └── dynamic/                # Dynamic config (CrowdSec middleware)
+        ├── crowdsec/                   # CrowdSec configuration
+        ├── certificate/                # Default self-signed certificates
+        ├── templates/                  # Service configuration templates
+        └── scripts/                    # Container entrypoint scripts
+```
+
+---
+
+## Troubleshooting
+
+### Certificate Issues (Traefik Mode)
+
+Check Traefik logs for ACME/Let's Encrypt errors:
+```bash
+docker logs glkvm_traefik 2>&1 | grep -i acme
+```
+
+### CrowdSec Not Blocking
+
+Verify CrowdSec is parsing logs:
+```bash
+docker exec glkvm_crowdsec cscli metrics
+```
+
+Check decisions:
+```bash
+docker exec glkvm_crowdsec cscli decisions list
+```
+
+### Service Status
 
 ```bash
-docker compose down && docker compose up -d
+# Standard mode
+docker-compose ps
+
+# Traefik mode
+docker-compose -f docker-compose.traefik.yml ps
 ```
 
-###  Domain-Based Access Example
+### View Logs
 
-Once everything is configured, you can access the platform via your domain:
+```bash
+# All services
+docker-compose logs -f
 
-```
-https://www.your-domain.com
+# Specific service
+docker logs glkvm_cloud -f
+docker logs glkvm_traefik -f
+docker logs glkvm_crowdsec -f
 ```

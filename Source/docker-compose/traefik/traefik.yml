@@ -1,0 +1,58 @@
+# Traefik Static Configuration for GLKVM Cloud
+# =============================================
+# This configuration enables:
+# - Automatic Let's Encrypt certificates (including wildcard)
+# - DNS-01 challenge via DigitalOcean
+# - Access logging for CrowdSec integration
+# - HTTP to HTTPS redirection
+#
+# Environment variables (DOMAIN, ACME_EMAIL, DO_AUTH_TOKEN) are
+# passed via docker-compose and used in container labels for routing.
+
+api:
+  dashboard: true
+  insecure: false
+
+log:
+  level: INFO
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+  format: json
+  bufferingSize: 100
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: glkvm_network
+
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      # Email is set via ACME_EMAIL environment variable
+      # Traefik reads this from the environment
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: digitalocean
+        delayBeforeCheck: "10s"
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"

@@ -1,0 +1,235 @@
+version: "3.8"
+
+# =========================================================
+# GLKVM Cloud with Traefik + Let's Encrypt + CrowdSec
+# =========================================================
+# This configuration provides:
+# - Automatic TLS certificates via Let's Encrypt (including wildcard)
+# - DNS-01 challenge for wildcard certs (DigitalOcean)
+# - CrowdSec for brute-force and threat protection
+# - Proper reverse proxy setup for GLKVM Cloud
+#
+# Usage:
+#   1. Copy .env.traefik.example to .env
+#   2. Edit .env with your domain and API tokens
+#   3. docker-compose -f docker-compose.traefik.yml up -d
+#   4. After first run, generate CrowdSec bouncer API key:
+#      docker exec crowdsec cscli bouncers add traefik-bouncer
+#   5. Add the key to .env as CROWDSEC_BOUNCER_API_KEY
+#   6. Restart: docker-compose -f docker-compose.traefik.yml restart traefik
+# =========================================================
+
+services:
+  # ========================
+  # Traefik Reverse Proxy
+  # ========================
+  traefik:
+    image: traefik:v3.2
+    container_name: glkvm_traefik
+    restart: always
+    environment:
+      - DOMAIN=${DOMAIN}
+      # Traefik reads ACME email from this env var (matches config path)
+      - TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL=${ACME_EMAIL}
+      # DNS Provider API tokens (only the configured provider needs to be set)
+      # DigitalOcean
+      - DO_AUTH_TOKEN=${DO_AUTH_TOKEN:-}
+      # Cloudflare
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
+      # AWS Route53
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-}
+      # Google Cloud DNS
+      - GCE_PROJECT=${GCE_PROJECT:-}
+      - GCE_SERVICE_ACCOUNT_FILE=${GCE_SERVICE_ACCOUNT_FILE:-}
+      # CrowdSec
+      - CROWDSEC_BOUNCER_API_KEY=${CROWDSEC_BOUNCER_API_KEY:-placeholder}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_letsencrypt:/letsencrypt
+      - traefik_logs:/var/log/traefik
+    networks:
+      - glkvm_network
+    labels:
+      # Traefik Dashboard (optional, access via https://traefik.${DOMAIN})
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.middlewares=crowdsec@file,dashboard-auth"
+      # Basic auth for dashboard (generate with: htpasswd -nb admin password)
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH:-admin:$$apr1$$xyz$$placeholder}"
+    depends_on:
+      - crowdsec
+
+  # ========================
+  # GLKVM Cloud (rttys)
+  # ========================
+  rttys:
+    image: ${GLKVM_IMAGE:-glzhitong/glkvm-cloud:latest}
+    container_name: glkvm_cloud
+    restart: always
+    environment:
+      GLKVM_ACCESS_IP: ${GLKVM_ACCESS_IP:-}
+
+      # ---- rttys ----
+      RTTYS_TOKEN: ${RTTYS_TOKEN:-DeviceTokenYouCanChangeMe}
+      RTTYS_PASS: ${RTTYS_PASS:-StrongP@ssw0rd}
+
+      # Internal ports (Traefik handles external traffic)
+      RTTYS_DEVICE_PORT: ${RTTYS_DEVICE_PORT:-5912}
+      RTTYS_WEBUI_PORT: ${RTTYS_WEBUI_PORT:-1443}
+      RTTYS_HTTP_PROXY_PORT: ${RTTYS_HTTP_PROXY_PORT:-10443}
+
+      # WebRTC / TURN
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_USER: ${TURN_USER:-glkvmcloudwebrtcuser}
+      TURN_PASS: ${TURN_PASS:-AnotherS3cret}
+
+      # ---- LDAP Configuration ----
+      LDAP_ENABLED: ${LDAP_ENABLED:-false}
+      LDAP_SERVER: ${LDAP_SERVER:-}
+      LDAP_PORT: ${LDAP_PORT:-389}
+      LDAP_USE_TLS: ${LDAP_USE_TLS:-false}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_BASE_DN: ${LDAP_BASE_DN:-}
+      LDAP_USER_FILTER: ${LDAP_USER_FILTER:-(uid=%s)}
+      LDAP_ALLOWED_GROUPS: ${LDAP_ALLOWED_GROUPS:-}
+      LDAP_ALLOWED_USERS: ${LDAP_ALLOWED_USERS:-}
+
+      # ---- OIDC Authentication ----
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_AUTH_URL: ${OIDC_AUTH_URL:-}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-}
+      OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
+      OIDC_ALLOWED_USERS: ${OIDC_ALLOWED_USERS:-}
+      OIDC_ALLOWED_SUBS: ${OIDC_ALLOWED_SUBS:-}
+      OIDC_ALLOWED_USERNAMES: ${OIDC_ALLOWED_USERNAMES:-}
+      OIDC_ALLOWED_GROUPS: ${OIDC_ALLOWED_GROUPS:-}
+
+      # ---- Reverse Proxy Mode (enabled for Traefik) ----
+      REVERSE_PROXY_ENABLED: "true"
+      DEVICE_ENDPOINT_HOST: ${DEVICE_ENDPOINT_HOST:-${DOMAIN}}
+      WEB_UI_HOST: ${WEB_UI_HOST:-www.${DOMAIN}}
+
+    volumes:
+      - ./templates/rttys.conf.template:/tpl/rttys.conf.tmpl:ro
+      - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./certificate/glkvm.cer:/home/certificate/glkvm_cer:ro
+      - ./certificate/glkvm.key:/home/certificate/glkvm_key:ro
+      - ./database:/home/database:rw
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    command: ["rttys"]
+    # Device port (5912) is TCP-based, not HTTP - must be exposed directly
+    ports:
+      - "${RTTYS_DEVICE_PORT:-5912}:${RTTYS_DEVICE_PORT:-5912}"
+    networks:
+      - glkvm_network
+    labels:
+      - "traefik.enable=true"
+
+      # ---- Web UI Router ----
+      # Routes: www.domain.com and domain.com -> rttys:1443
+      - "traefik.http.routers.glkvm-webui.rule=Host(`www.${DOMAIN}`) || Host(`${DOMAIN}`)"
+      - "traefik.http.routers.glkvm-webui.entrypoints=websecure"
+      - "traefik.http.routers.glkvm-webui.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.glkvm-webui.tls.domains[0].main=${DOMAIN}"
+      - "traefik.http.routers.glkvm-webui.tls.domains[0].sans=*.${DOMAIN}"
+      - "traefik.http.routers.glkvm-webui.middlewares=crowdsec@file"
+      - "traefik.http.routers.glkvm-webui.service=glkvm-webui"
+      - "traefik.http.services.glkvm-webui.loadbalancer.server.port=${RTTYS_WEBUI_PORT:-1443}"
+
+      # ---- Device Access Router (Wildcard) ----
+      # Routes: *.domain.com -> rttys:10443 (except www and traefik subdomains)
+      - "traefik.http.routers.glkvm-device.rule=HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.${DOMAIN}`) && !Host(`www.${DOMAIN}`) && !Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.glkvm-device.entrypoints=websecure"
+      - "traefik.http.routers.glkvm-device.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.glkvm-device.middlewares=crowdsec@file"
+      - "traefik.http.routers.glkvm-device.service=glkvm-device"
+      - "traefik.http.services.glkvm-device.loadbalancer.server.port=${RTTYS_HTTP_PROXY_PORT:-10443}"
+      - "traefik.http.routers.glkvm-device.priority=1"
+
+  # ========================
+  # TURN Server (coturn)
+  # ========================
+  coturn:
+    image: ${COTURN_IMAGE:-coturn/coturn:edge-alpine}
+    container_name: glkvm_coturn
+    restart: always
+    environment:
+      GLKVM_ACCESS_IP: ${GLKVM_ACCESS_IP:-}
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_USER: ${TURN_USER:-glkvmcloudwebrtcuser}
+      TURN_PASS: ${TURN_PASS:-AnotherS3cret}
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    command: ["coturn"]
+    volumes:
+      - ./templates/turnserver.conf.template:/tpl/turnserver.conf.tmpl:ro
+      - ./scripts/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    ports:
+      - "${TURN_PORT:-3478}:3478/tcp"
+      - "${TURN_PORT:-3478}:3478/udp"
+    networks:
+      - glkvm_network
+
+  # ========================
+  # CrowdSec Security Engine
+  # ========================
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: glkvm_crowdsec
+    restart: always
+    environment:
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/base-http-scenarios
+      - GID=1000
+    volumes:
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - traefik_logs:/var/log/traefik:ro
+    networks:
+      - glkvm_network
+
+  # ========================
+  # CrowdSec Bouncer (Traefik)
+  # ========================
+  # This service checks incoming IPs against CrowdSec decisions
+  # and blocks malicious traffic via Traefik's forward-auth middleware.
+  crowdsec-bouncer:
+    image: fbonalair/traefik-crowdsec-bouncer:latest
+    container_name: glkvm_crowdsec_bouncer
+    restart: always
+    environment:
+      - CROWDSEC_BOUNCER_API_KEY=${CROWDSEC_BOUNCER_API_KEY}
+      - CROWDSEC_AGENT_HOST=crowdsec:8080
+      - GIN_MODE=release
+    depends_on:
+      - crowdsec
+    networks:
+      - glkvm_network
+
+networks:
+  glkvm_network:
+    driver: bridge
+
+volumes:
+  traefik_letsencrypt:
+    name: glkvm_traefik_letsencrypt
+  traefik_logs:
+    name: glkvm_traefik_logs
+  crowdsec_config:
+    name: glkvm_crowdsec_config
+  crowdsec_data:
+    name: glkvm_crowdsec_data

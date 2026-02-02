@@ -1,0 +1,11 @@
+# CrowdSec Log Acquisition Configuration
+# =======================================
+# This file tells CrowdSec where to find logs and how to parse them.
+# The Traefik access logs are parsed to detect brute-force attacks,
+# credential stuffing, and other malicious behavior.
+
+# Traefik Access Logs (JSON format)
+filenames:
+  - /var/log/traefik/access.log
+labels:
+  type: traefik

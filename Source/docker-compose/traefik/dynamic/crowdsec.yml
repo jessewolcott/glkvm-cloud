@@ -1,0 +1,11 @@
+# CrowdSec Bouncer Middleware for Traefik
+# ========================================
+# Uses forward-auth to check incoming requests against CrowdSec decisions.
+# Blocked IPs receive a 403 Forbidden response.
+
+http:
+  middlewares:
+    crowdsec:
+      forwardAuth:
+        address: "http://crowdsec-bouncer:8080/api/v1/forwardAuth"
+        trustForwardHeader: true

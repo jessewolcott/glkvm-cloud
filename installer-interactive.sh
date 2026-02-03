@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =========================================================
 # GLKVM Cloud - Interactive Installer
 # =========================================================
@@ -13,8 +13,14 @@
 #    - Brute-force protection via CrowdSec
 #    - Requires a domain name
 #
-# Usage: sudo ./installer-interactive.sh
+# Usage: sudo bash installer-interactive.sh
 # =========================================================
+
+# Ensure we're running in bash, not sh
+if [ -z "$BASH_VERSION" ]; then
+    echo "Error: This script requires bash. Please run with: sudo bash $0"
+    exit 1
+fi
 
 set -e
 
@@ -177,8 +183,8 @@ detect_architecture() {
 # =========================================================
 
 check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        print_error "This script must be run as root (use sudo)"
+    if [ "$(id -u)" -ne 0 ]; then
+        print_error "This script must be run as root (use: sudo bash $0)"
         exit 1
     fi
 }

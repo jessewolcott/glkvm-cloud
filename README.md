@@ -84,7 +84,7 @@ The interactive installer provides a guided setup with two deployment modes:
 ```bash
 git clone https://github.com/jessewolcott/glkvm-cloud.git
 cd glkvm-cloud
-sudo ./installer-interactive.sh
+sudo bash ./installer-interactive.sh
 ```
 
 **The installer will prompt you for:**

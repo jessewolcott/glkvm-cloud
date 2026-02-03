@@ -121,8 +121,9 @@ services:
 
       # ---- Reverse Proxy Mode (enabled for Traefik) ----
       REVERSE_PROXY_ENABLED: "true"
+      # WEB_UI_HOST should be base domain so both domain.com and www.domain.com work
       DEVICE_ENDPOINT_HOST: ${DEVICE_ENDPOINT_HOST:-${DOMAIN}}
-      WEB_UI_HOST: ${WEB_UI_HOST:-www.${DOMAIN}}
+      WEB_UI_HOST: ${WEB_UI_HOST:-${DOMAIN}}
 
     volumes:
       - ./templates/rttys.conf.template:/tpl/rttys.conf.tmpl:ro

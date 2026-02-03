@@ -679,8 +679,10 @@ TURN_USER=${TURN_USER}
 TURN_PASS=${TURN_PASS}
 
 # Domain Configuration
+# Note: WEB_UI_HOST should be the base domain (not www.) so both
+# kvm.example.com AND www.kvm.example.com are allowed
 DEVICE_ENDPOINT_HOST=${DOMAIN}
-WEB_UI_HOST=www.${DOMAIN}
+WEB_UI_HOST=${DOMAIN}
 
 # LDAP (disabled by default)
 LDAP_ENABLED=false

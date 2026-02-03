@@ -24,6 +24,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SCRIPT_DIR}/Source/docker-compose"
 INSTALL_DIR="${SCRIPT_DIR}/glkvm_cloud"
+DEFAULT_SERVICE_USER="glkvm"
+SERVICE_USER=""
 
 # Colors
 RED='\033[0;31m'
@@ -186,6 +188,108 @@ check_source_files() {
         print_error "Source directory not found: $SOURCE_DIR"
         echo "    Please ensure the Source/docker-compose folder exists."
         exit 1
+    fi
+}
+
+configure_service_user() {
+    print_step "Service User Configuration"
+
+    echo -e "    ${BOLD}Security Best Practice${NC}"
+    echo "    Running Docker services as a dedicated non-root user improves security."
+    echo "    The installer can create a service user to own and manage GLKVM Cloud."
+    echo ""
+
+    if prompt_yes_no "Create a dedicated service user for GLKVM Cloud?" "y"; then
+        CREATE_SERVICE_USER="true"
+
+        prompt SERVICE_USER "Service username" "$DEFAULT_SERVICE_USER"
+
+        # Validate username
+        if [[ ! "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            print_error "Invalid username. Using default: $DEFAULT_SERVICE_USER"
+            SERVICE_USER="$DEFAULT_SERVICE_USER"
+        fi
+    else
+        CREATE_SERVICE_USER="false"
+        SERVICE_USER="root"
+        print_warning "Services will run as root (not recommended for production)"
+    fi
+}
+
+create_service_user() {
+    if [ "$CREATE_SERVICE_USER" != "true" ]; then
+        return 0
+    fi
+
+    print_substep "Creating service user: $SERVICE_USER..."
+
+    # Check if user already exists
+    if id "$SERVICE_USER" &>/dev/null; then
+        print_warning "User '$SERVICE_USER' already exists"
+    else
+        # Create user with no login shell and no home directory login
+        if [ "$PLATFORM" = "debian" ]; then
+            useradd -r -s /usr/sbin/nologin -M "$SERVICE_USER" 2>/dev/null || \
+            useradd -r -s /bin/false -M "$SERVICE_USER" 2>/dev/null || true
+        else
+            useradd -r -s /sbin/nologin -M "$SERVICE_USER" 2>/dev/null || \
+            useradd -r -s /bin/false -M "$SERVICE_USER" 2>/dev/null || true
+        fi
+
+        if id "$SERVICE_USER" &>/dev/null; then
+            print_success "Created user: $SERVICE_USER"
+        else
+            print_error "Failed to create user: $SERVICE_USER"
+            print_warning "Falling back to root"
+            SERVICE_USER="root"
+            CREATE_SERVICE_USER="false"
+            return 0
+        fi
+    fi
+
+    # Add user to docker group
+    print_substep "Adding $SERVICE_USER to docker group..."
+
+    if getent group docker > /dev/null 2>&1; then
+        usermod -aG docker "$SERVICE_USER" 2>/dev/null || true
+        print_success "Added $SERVICE_USER to docker group"
+    else
+        print_warning "Docker group not found - creating it"
+        groupadd docker 2>/dev/null || true
+        usermod -aG docker "$SERVICE_USER" 2>/dev/null || true
+    fi
+
+    # Get user's UID and GID for later use
+    SERVICE_USER_UID=$(id -u "$SERVICE_USER" 2>/dev/null || echo "")
+    SERVICE_USER_GID=$(id -g "$SERVICE_USER" 2>/dev/null || echo "")
+}
+
+set_directory_ownership() {
+    if [ "$CREATE_SERVICE_USER" != "true" ] || [ -z "$SERVICE_USER" ] || [ "$SERVICE_USER" = "root" ]; then
+        return 0
+    fi
+
+    print_substep "Setting ownership of $INSTALL_DIR to $SERVICE_USER..."
+
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" 2>/dev/null || \
+    chown -R "$SERVICE_USER" "$INSTALL_DIR" 2>/dev/null || true
+
+    # Ensure proper permissions
+    chmod -R u+rw "$INSTALL_DIR" 2>/dev/null || true
+
+    print_success "Directory ownership set to $SERVICE_USER"
+}
+
+run_as_service_user() {
+    local cmd="$1"
+
+    if [ "$CREATE_SERVICE_USER" = "true" ] && [ -n "$SERVICE_USER" ] && [ "$SERVICE_USER" != "root" ]; then
+        # Run command as service user
+        su - "$SERVICE_USER" -s /bin/bash -c "cd $INSTALL_DIR && $cmd" 2>/dev/null || \
+        sudo -u "$SERVICE_USER" bash -c "cd $INSTALL_DIR && $cmd" 2>/dev/null || \
+        eval "cd $INSTALL_DIR && $cmd"
+    else
+        eval "cd $INSTALL_DIR && $cmd"
     fi
 }
 
@@ -446,10 +550,21 @@ EOF
 
     print_success "Environment configuration created"
 
+    # Set directory ownership
+    set_directory_ownership
+
     # Start services
     print_substep "Starting GLKVM Cloud services..."
     cd "$INSTALL_DIR"
-    $COMPOSE_CMD up -d > /dev/null 2>&1
+
+    if [ "$CREATE_SERVICE_USER" = "true" ] && [ "$SERVICE_USER" != "root" ]; then
+        # Run docker-compose as service user
+        sudo -u "$SERVICE_USER" $COMPOSE_CMD up -d > /dev/null 2>&1 || \
+        $COMPOSE_CMD up -d > /dev/null 2>&1
+    else
+        $COMPOSE_CMD up -d > /dev/null 2>&1
+    fi
+
     print_success "Services started"
 
     # Summary
@@ -713,10 +828,21 @@ EOF
 
     print_success "Environment configuration created"
 
+    # Set directory ownership
+    set_directory_ownership
+
     # Start services
     print_substep "Starting GLKVM Cloud services..."
     cd "$INSTALL_DIR"
-    $COMPOSE_CMD -f docker-compose.traefik.yml up -d > /dev/null 2>&1
+
+    if [ "$CREATE_SERVICE_USER" = "true" ] && [ "$SERVICE_USER" != "root" ]; then
+        # Run docker-compose as service user
+        sudo -u "$SERVICE_USER" $COMPOSE_CMD -f docker-compose.traefik.yml up -d > /dev/null 2>&1 || \
+        $COMPOSE_CMD -f docker-compose.traefik.yml up -d > /dev/null 2>&1
+    else
+        $COMPOSE_CMD -f docker-compose.traefik.yml up -d > /dev/null 2>&1
+    fi
+
     print_success "Services started"
 
     # Wait for CrowdSec and generate bouncer key
@@ -731,7 +857,12 @@ EOF
         print_success "CrowdSec bouncer key generated"
 
         print_substep "Restarting services with CrowdSec protection..."
-        $COMPOSE_CMD -f docker-compose.traefik.yml restart traefik crowdsec-bouncer > /dev/null 2>&1
+        if [ "$CREATE_SERVICE_USER" = "true" ] && [ "$SERVICE_USER" != "root" ]; then
+            sudo -u "$SERVICE_USER" $COMPOSE_CMD -f docker-compose.traefik.yml restart traefik crowdsec-bouncer > /dev/null 2>&1 || \
+            $COMPOSE_CMD -f docker-compose.traefik.yml restart traefik crowdsec-bouncer > /dev/null 2>&1
+        else
+            $COMPOSE_CMD -f docker-compose.traefik.yml restart traefik crowdsec-bouncer > /dev/null 2>&1
+        fi
         print_success "CrowdSec protection activated"
     else
         print_warning "Could not auto-generate CrowdSec key"
@@ -811,12 +942,32 @@ print_common_info() {
     echo ""
     echo "    ${INSTALL_DIR}"
     echo ""
-    echo -e "${BOLD}Commands:${NC}"
-    echo ""
-    echo "    Start:    cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE up -d"
-    echo "    Stop:     cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE down"
-    echo "    Logs:     cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE logs -f"
-    echo "    Status:   cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE ps"
+
+    # Service user info
+    if [ "$CREATE_SERVICE_USER" = "true" ] && [ "$SERVICE_USER" != "root" ]; then
+        echo -e "${BOLD}Service User:${NC}"
+        echo ""
+        echo -e "    ${GREEN}Username:${NC}    $SERVICE_USER"
+        echo -e "    ${GREEN}Group:${NC}       docker"
+        echo ""
+        echo -e "${BOLD}Commands (run as root or with sudo):${NC}"
+        echo ""
+        echo "    Start:    sudo -u $SERVICE_USER $COMPOSE_CMD -f $INSTALL_DIR/$COMPOSE_FILE up -d"
+        echo "    Stop:     sudo -u $SERVICE_USER $COMPOSE_CMD -f $INSTALL_DIR/$COMPOSE_FILE down"
+        echo "    Logs:     sudo -u $SERVICE_USER $COMPOSE_CMD -f $INSTALL_DIR/$COMPOSE_FILE logs -f"
+        echo "    Status:   sudo -u $SERVICE_USER $COMPOSE_CMD -f $INSTALL_DIR/$COMPOSE_FILE ps"
+        echo ""
+        echo -e "    ${CYAN}Or switch to the service user:${NC}"
+        echo "    sudo -su $SERVICE_USER"
+        echo "    cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE up -d"
+    else
+        echo -e "${BOLD}Commands:${NC}"
+        echo ""
+        echo "    Start:    cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE up -d"
+        echo "    Stop:     cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE down"
+        echo "    Logs:     cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE logs -f"
+        echo "    Status:   cd $INSTALL_DIR && $COMPOSE_CMD -f $COMPOSE_FILE ps"
+    fi
     echo ""
     echo -e "${BOLD}Firewall Ports:${NC}"
     echo ""
@@ -851,10 +1002,19 @@ main() {
     # Installation mode
     select_install_mode
 
+    # Service user configuration
+    configure_service_user
+
     # Install dependencies
     print_step "Installing Dependencies"
     install_dependencies
     configure_firewall
+
+    # Create service user (after docker is installed)
+    if [ "$CREATE_SERVICE_USER" = "true" ]; then
+        print_step "Creating Service User"
+        create_service_user
+    fi
 
     # Mode-specific installation
     if [ "$INSTALL_MODE" = "standard" ]; then

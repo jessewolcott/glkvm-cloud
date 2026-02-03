@@ -116,6 +116,8 @@ curl -fsSL https://kvm-cloud.gl-inet.com/selfhost/install.sh | sudo bash
 >
 > **Platform:** supports both **x86_64 (amd64)** and **arm64 (AArch64)**.
 
+#### Standard Mode (Self-signed certs)
+
 ```bash
 git clone https://github.com/jessewolcott/glkvm-cloud.git
 cd glkvm-cloud/Source/docker-compose
@@ -131,6 +133,30 @@ nano .env
 
 # Start services
 docker-compose up -d
+```
+
+#### Traefik Mode (Let's Encrypt + CrowdSec)
+
+```bash
+git clone https://github.com/jessewolcott/glkvm-cloud.git
+cd glkvm-cloud/Source/docker-compose
+
+# Copy Traefik environment template
+cp .env.traefik.example .env
+
+# Edit configuration - IMPORTANT: Set both DOMAIN and DOMAIN_REGEXP
+# DOMAIN=kvm.example.com
+# DOMAIN_REGEXP=kvm\.example\.com  (dots must be escaped with \)
+nano .env
+
+# Start services
+docker-compose -f docker-compose.traefik.yml up -d
+
+# After startup, generate CrowdSec bouncer key:
+docker exec glkvm_crowdsec cscli bouncers add traefik-bouncer
+
+# Add the key to .env as CROWDSEC_BOUNCER_API_KEY, then restart:
+docker-compose -f docker-compose.traefik.yml restart traefik crowdsec-bouncer
 ```
 
 ---
@@ -393,6 +419,38 @@ glkvm-cloud/
 ---
 
 ## Troubleshooting
+
+### HTTP 400/500 Errors (Traefik Mode)
+
+If you get HTTP 400 or 500 errors after installation:
+
+**1. Check for malformed domain in .env:**
+```bash
+grep DOMAIN ~/glkvm_cloud/.env
+# Look for trailing characters like } or extra spaces
+```
+
+**2. Verify DOMAIN_REGEXP is set correctly:**
+```bash
+grep DOMAIN_REGEXP ~/glkvm_cloud/.env
+# Should show dots escaped: example\.com (not example.com)
+```
+
+If `DOMAIN_REGEXP` is missing or incorrect, add/fix it:
+```bash
+# For domain consolemanager.royalfarms.com:
+echo 'DOMAIN_REGEXP=consolemanager\.royalfarms\.com' >> ~/glkvm_cloud/.env
+
+# Then restart:
+cd ~/glkvm_cloud && docker-compose -f docker-compose.traefik.yml restart
+```
+
+**3. Check CrowdSec bouncer is running:**
+```bash
+docker ps | grep bouncer
+# If restarting, check the API key is set
+grep CROWDSEC_BOUNCER_API_KEY ~/glkvm_cloud/.env
+```
 
 ### Certificate Issues (Traefik Mode)
 

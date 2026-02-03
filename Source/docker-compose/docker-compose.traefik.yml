@@ -143,6 +143,7 @@ services:
 
       # ---- Web UI Router ----
       # Routes: www.domain.com and domain.com -> rttys:1443
+      # Priority 100 ensures this matches before the wildcard device router
       - "traefik.http.routers.glkvm-webui.rule=Host(`www.${DOMAIN}`) || Host(`${DOMAIN}`)"
       - "traefik.http.routers.glkvm-webui.entrypoints=websecure"
       - "traefik.http.routers.glkvm-webui.tls.certresolver=letsencrypt"
@@ -150,17 +151,23 @@ services:
       - "traefik.http.routers.glkvm-webui.tls.domains[0].sans=*.${DOMAIN}"
       - "traefik.http.routers.glkvm-webui.middlewares=crowdsec@file"
       - "traefik.http.routers.glkvm-webui.service=glkvm-webui"
+      - "traefik.http.routers.glkvm-webui.priority=100"
       - "traefik.http.services.glkvm-webui.loadbalancer.server.port=${RTTYS_WEBUI_PORT:-1443}"
 
       # ---- Device Access Router (Wildcard) ----
-      # Routes: *.domain.com -> rttys:10443 (except www and traefik subdomains)
-      - "traefik.http.routers.glkvm-device.rule=HostRegexp(`{subdomain:[a-zA-Z0-9-]+}.${DOMAIN}`) && !Host(`www.${DOMAIN}`) && !Host(`traefik.${DOMAIN}`)"
+      # Routes: *.domain.com -> rttys:10443 (any subdomain not matched above)
+      # Uses HostRegexp with Traefik v3 syntax
+      # DOMAIN_REGEXP should have dots escaped (e.g., "example\.com")
+      # Priority 10 (lower than webui at 100) so specific hosts match first
+      - "traefik.http.routers.glkvm-device.rule=HostRegexp(`^.+\\.${DOMAIN_REGEXP}$$`)"
       - "traefik.http.routers.glkvm-device.entrypoints=websecure"
       - "traefik.http.routers.glkvm-device.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.glkvm-device.tls.domains[0].main=${DOMAIN}"
+      - "traefik.http.routers.glkvm-device.tls.domains[0].sans=*.${DOMAIN}"
       - "traefik.http.routers.glkvm-device.middlewares=crowdsec@file"
       - "traefik.http.routers.glkvm-device.service=glkvm-device"
+      - "traefik.http.routers.glkvm-device.priority=10"
       - "traefik.http.services.glkvm-device.loadbalancer.server.port=${RTTYS_HTTP_PROXY_PORT:-10443}"
-      - "traefik.http.routers.glkvm-device.priority=1"
 
   # ========================
   # TURN Server (coturn)

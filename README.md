@@ -393,12 +393,34 @@ docker compose -f docker-compose.traefik.yml up -d
 
 ---
 
+### 🗑️ Uninstallation
+
+To completely remove GLKVM Cloud from your system, use the uninstall script:
+
+```bash
+cd glkvm-cloud
+sudo bash ./uninstall.sh
+```
+
+The uninstaller will interactively prompt you to remove:
+- **Docker containers** - Stops and removes all GLKVM containers
+- **Docker volumes** - Removes persistent data (database, certificates, logs)
+- **Installation directory** - Removes ~/glkvm_cloud
+- **Firewall rules** - Removes UFW/firewalld rules added during installation
+- **Service user** - Removes the dedicated glkvm user (if created)
+- **Docker images** - Removes pulled container images
+
+Each step requires confirmation, so you can choose what to keep or remove.
+
+---
+
 ## Project Structure
 
 ```
 glkvm-cloud/
 ├── installer-interactive.sh    # Interactive installer (recommended)
 ├── install.sh                  # One-line installer (downloads from gl-inet)
+├── uninstall.sh                # Uninstaller script
 ├── README.md                   # This file
 └── Source/
     └── docker-compose/

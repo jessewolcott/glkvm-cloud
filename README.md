@@ -87,7 +87,14 @@ cd glkvm-cloud
 sudo ./installer-interactive.sh
 ```
 
-The installer will prompt you to choose between Standard and Traefik modes, then guide you through the configuration.
+**The installer will prompt you for:**
+
+1. **Installation mode** - Standard or Traefik
+2. **Service user** - Create dedicated `glkvm` user (recommended)
+3. **Domain & email** (Traefik mode) - For Let's Encrypt certificates
+4. **DNS provider** (Traefik mode) - DigitalOcean, Cloudflare, Route53, or GCloud
+5. **Credentials** - Auto-generated with option to customize
+6. **Traefik dashboard** (optional) - Web UI for Traefik management
 
 ---
 

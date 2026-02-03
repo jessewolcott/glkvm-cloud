@@ -53,7 +53,7 @@ We provide **three** installation methods:
 
 | Method | Best For | TLS Certificates | Features |
 |--------|----------|------------------|----------|
-| **A) Interactive Installer** | Production deployments | Auto Let's Encrypt or self-signed | Full configuration wizard, Traefik + CrowdSec option |
+| **A) Interactive Installer** | Production deployments | Auto Let's Encrypt or self-signed | Full wizard, Traefik + CrowdSec, service user, firewall config |
 | **B) One-line Installer** | Quick testing | Self-signed | Fastest setup, downloads from gl-inet |
 | **C) Manual Docker Compose** | Custom deployments | Your choice | Full control |
 
@@ -73,6 +73,11 @@ The interactive installer provides a guided setup with two deployment modes:
 - **CrowdSec brute-force protection**
 - Domain-based access with proper TLS
 - Supports DigitalOcean, Cloudflare, AWS Route53, Google Cloud DNS
+
+#### Security Features (Both Modes)
+- **Dedicated service user** - Option to create a non-root user (`glkvm`) to manage Docker services
+- **Automatic credential generation** - Secure random passwords and tokens
+- **Firewall configuration** - Automatic UFW/firewalld rules
 
 **Run as root:**
 
@@ -301,14 +306,39 @@ For detailed OIDC configuration options and setup instructions, see the **[Docke
 
 ---
 
+### 👤 Service User (Security Best Practice)
+
+The interactive installer offers to create a dedicated service user (`glkvm` by default) to run Docker services. This is a security best practice that:
+
+- Isolates the application from root privileges
+- Limits potential damage from container escapes
+- Follows the principle of least privilege
+
+**If you enabled the service user, run commands as that user:**
+
+```bash
+# Using sudo
+sudo -u glkvm docker-compose -f /path/to/glkvm_cloud/docker-compose.yml up -d
+
+# Or switch to the service user
+sudo -su glkvm
+cd ~/glkvm_cloud && docker-compose up -d
+```
+
+---
+
 ### 🔄 Restart Services After Configuration Changes
 
 After replacing certificates or updating configuration, restart the GLKVM Cloud services:
 
-**Standard Installation:**
+**Standard Installation (as root or service user):**
 ```bash
 cd ~/glkvm_cloud
 docker-compose down && docker-compose up -d
+
+# Or with service user:
+sudo -u glkvm docker-compose -f ~/glkvm_cloud/docker-compose.yml down
+sudo -u glkvm docker-compose -f ~/glkvm_cloud/docker-compose.yml up -d
 ```
 
 **Traefik Installation:**
@@ -316,6 +346,10 @@ docker-compose down && docker-compose up -d
 cd ~/glkvm_cloud
 docker-compose -f docker-compose.traefik.yml down
 docker-compose -f docker-compose.traefik.yml up -d
+
+# Or with service user:
+sudo -u glkvm docker-compose -f ~/glkvm_cloud/docker-compose.traefik.yml down
+sudo -u glkvm docker-compose -f ~/glkvm_cloud/docker-compose.traefik.yml up -d
 ```
 
 Or, on systems with the Docker CLI plugin:
@@ -376,20 +410,38 @@ docker exec glkvm_crowdsec cscli decisions list
 
 ```bash
 # Standard mode
-docker-compose ps
+cd ~/glkvm_cloud && docker-compose ps
 
 # Traefik mode
-docker-compose -f docker-compose.traefik.yml ps
+cd ~/glkvm_cloud && docker-compose -f docker-compose.traefik.yml ps
+
+# With service user
+sudo -u glkvm docker-compose -f ~/glkvm_cloud/docker-compose.traefik.yml ps
 ```
 
 ### View Logs
 
 ```bash
 # All services
-docker-compose logs -f
+cd ~/glkvm_cloud && docker-compose logs -f
 
 # Specific service
 docker logs glkvm_cloud -f
 docker logs glkvm_traefik -f
 docker logs glkvm_crowdsec -f
+```
+
+### Service User Issues
+
+If Docker commands fail with permission errors when using the service user:
+
+```bash
+# Verify user is in docker group
+groups glkvm
+
+# If not, add them
+sudo usermod -aG docker glkvm
+
+# User may need to log out/in or restart Docker
+sudo systemctl restart docker
 ```
